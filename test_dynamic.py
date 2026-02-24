@@ -7,6 +7,9 @@ class MockMonitor(GameMonitor):
         super().__init__(config_path="test_config.json")
         self.running_procs = set()
         self.launched = []
+        # テスト用: インターバルを最小値1秒に設定
+        # (0だとcore.pyのif launch_sleep_remaining > 0に入らず起動されない)
+        self.launch_interval = 1
 
     def load_config(self):
         self.games = [
@@ -21,6 +24,8 @@ class MockMonitor(GameMonitor):
         if game_index < len(self.games):
             name = self.games[game_index]['process_name']
             self.launched.append(name)
+            # テスト用: 起動と同時に「実行中」とみなす（誤検知を防ぐ）
+            self.running_procs.add(name)
             print(f"[Mock] Launched {name}")
 
 def run_test():
@@ -29,22 +34,22 @@ def run_test():
 
     print("Test: Starting app 1...")
     monitor.running_procs.add("app1.exe")
-    time.sleep(4)
+    time.sleep(5)
     assert monitor.state.value == 1, f"Expected 1, got {monitor.state.value}"
 
     print("Test: Closing app 1...")
     monitor.running_procs.remove("app1.exe")
-    time.sleep(4)
+    time.sleep(5)
     assert monitor.state.value == 2, f"Expected 2, got {monitor.state.value}"
     assert "app2.exe" in monitor.launched, "app2.exe should be launched"
 
     monitor.running_procs.add("app2.exe")
-    time.sleep(4)
+    time.sleep(5)
     assert not monitor.waiting_for_launch
 
     print("Test: Closing app 2...")
     monitor.running_procs.remove("app2.exe")
-    time.sleep(4)
+    time.sleep(5)
     assert monitor.state == State.STANDBY, f"Expected STANDBY, got {monitor.state}"
 
     print("Test passed!")

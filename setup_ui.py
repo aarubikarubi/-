@@ -2,6 +2,8 @@ import sys
 import os
 import json
 import winreg
+import urllib.parse
+import webbrowser
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QLineEdit, QPushButton, QComboBox, QScrollArea, QFrame,
@@ -370,6 +372,15 @@ class ModernWindow(QMainWindow):
         btn_layout.addWidget(self.del_btn)
         sidebar_layout.addLayout(btn_layout)
         
+        # Feedback button at the bottom of sidebar
+        sidebar_layout.addSpacing(20)
+        feedback_btn = QPushButton("💡 要望・バグ報告を送る")
+        feedback_btn.setObjectName("SidebarButton")
+        feedback_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        feedback_btn.setToolTip("機能の要望や不具合報告を開発者に送信します（ブラウザが開きます）。")
+        feedback_btn.clicked.connect(self.action_open_feedback)
+        sidebar_layout.addWidget(feedback_btn)
+
         # --- Main Content Area ---
         self.main_content = QWidget()
         mc_layout = QVBoxLayout(self.main_content)
@@ -413,6 +424,16 @@ class ModernWindow(QMainWindow):
         
         self.refresh_sidebar()
         self.show_app_settings()
+
+    def action_open_feedback(self):
+        base_url = "https://github.com/aarubikarubi/DailyGameLauncher/issues/new"
+        params = {
+            "title": "【要望・報告】",
+            "body": "ここに機能の要望やバグ報告を書いてください。\n\n---\n環境情報:\nOS: Windows\n",
+            "labels": "enhancement"
+        }
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        webbrowser.open(url)
 
     def init_app_settings(self, container):
         layout = QVBoxLayout(container)
@@ -724,6 +745,11 @@ class ModernWindow(QMainWindow):
             rf"D:\HoYoPlay\games\Genshin Impact game\{target_exe}",
             rf"D:\HoYoPlay\games\Star Rail game\Games\{target_exe}",
             rf"D:\HoYoPlay\games\Houkai3rd game\{target_exe}",
+            rf"C:\Program Files\Star Rail\Games\{target_exe}",
+            rf"D:\Star Rail\Games\{target_exe}",
+            rf"C:\Star Rail\Games\{target_exe}",
+            rf"D:\Star Rail Games\{target_exe}",
+            rf"C:\Star Rail Games\{target_exe}",
             rf"C:\Program Files\Wuthering Waves\Wuthering Waves Game\{target_exe}",
             rf"D:\Wuthering Waves\Wuthering Waves Game\{target_exe}",
             rf"D:\SteamLibrary\steamapps\common\Wuthering Waves\{target_exe}",

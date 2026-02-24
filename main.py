@@ -8,6 +8,10 @@ import os
 import setup_ui
 import keyboard
 import update_manager
+import traceback
+import urllib.parse
+import webbrowser
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 def create_image():
     # シンプルなアイコン（緑色の四角形）を生成
@@ -32,6 +36,7 @@ def update_menu(icon, monitor):
         pystray.MenuItem("▶ 日課を開始", lambda: action_start_routine(icon, monitor)),
         pystray.MenuItem("⏭ 次のゲームへ強制スキップ", lambda: action_skip(icon, monitor)),
         pystray.MenuItem("設定画面を開く", lambda: action_settings()),
+        pystray.MenuItem("💡 要望・バグ報告を送る", lambda: action_open_feedback()),
         pystray.MenuItem("リセット (待機に戻す)", lambda: action_reset(icon, monitor)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("完全に終了", lambda: action_exit(icon, monitor))
@@ -58,11 +63,53 @@ def action_settings():
     if 'app' in globals() and app:
         app.safe_show()
 
+def action_open_feedback():
+    base_url = "https://github.com/aarubikarubi/DailyGameLauncher/issues/new"
+    params = {
+        "title": "【要望・報告】",
+        "body": "ここに機能の要望やバグ報告を書いてください。\n\n---\n環境情報:\nOS: Windows\n",
+        "labels": "enhancement"
+    }
+    url = f"{base_url}?{urllib.parse.urlencode(params)}"
+    webbrowser.open(url)
+
 def action_exit(icon, monitor):
     monitor.stop()
     icon.stop()
     if 'app' in globals() and app:
         app.safe_quit()
+
+def global_exception_handler(exctype, value, tb):
+    # エラー内容のフォーマット
+    err_msg = "".join(traceback.format_exception(exctype, value, tb))
+    print("Uncaught Exception:", err_msg, file=sys.stderr)
+
+    # QApplicationインスタンスがない場合は作成
+    qapp = QApplication.instance()
+    if not qapp:
+        qapp = QApplication(sys.argv)
+
+    # エラーダイアログの表示
+    msg_box = QMessageBox()
+    msg_box.setIcon(QMessageBox.Icon.Critical)
+    msg_box.setWindowTitle("予期せぬエラー")
+    msg_box.setText("予期せぬエラーが発生しました。\n開発者に報告してツールを改善しますか？")
+    msg_box.setDetailedText(err_msg)
+    
+    report_btn = msg_box.addButton("報告する (ブラウザを開く)", QMessageBox.ButtonRole.AcceptRole)
+    ignore_btn = msg_box.addButton("無視して閉じる", QMessageBox.ButtonRole.RejectRole)
+    
+    msg_box.exec()
+
+    if msg_box.clickedButton() == report_btn:
+        base_url = "https://github.com/aarubikarubi/DailyGameLauncher/issues/new"
+        params = {
+            "title": f"[自動報告] クライアントクラッシュ: {exctype.__name__}",
+            "body": f"以下のエラーが発生しました。\n\n```python\n{err_msg}\n```\n\n---\n追加の情報があればここに記載してください:",
+            "labels": "bug"
+        }
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        webbrowser.open(url)
 
 def monitor_state_changes(icon, monitor):
     # 状態が変わったときにメニュー表記を更新するバックグラウンドタスク
@@ -80,6 +127,9 @@ def monitor_state_changes(icon, monitor):
         time.sleep(1)
 
 if __name__ == "__main__":
+    # グローバル例外ハンドラを設定 (Self-Healing UI)
+    sys.excepthook = global_exception_handler
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(base_dir, "config.json")
     
