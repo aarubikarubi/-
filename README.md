@@ -1,5 +1,8 @@
-# Daily Game Launcher (v3.0.0)
+# Daily Game Launcher (v3.0.1)
 「毎日のゲーム日課を、1クリックで全自動化」
+
+![メイン画面](assets/screenshot.png)
+![動作デモ](assets/demo.gif)
 
 ## 主要機能
 * **連鎖起動**: ゲーム終了を検知し、次を自動起動。
@@ -11,3 +14,6 @@
 ## クイックスタート
 1. ゲームをリストに追加（自動検出対応）。
 2. 「日課を開始」をクリック。
+
+## インストール
+[Releases](https://github.com/aarubikarubi/DailyGameLauncher/releases) から最新のインストーラーをダウンロードして実行してください。

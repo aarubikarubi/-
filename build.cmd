@@ -1,6 +1,6 @@
 @echo off
 echo Building main application...
-pyinstaller --noconfirm --onedir --windowed --icon=NONE --name "main" main.py
+pyinstaller --noconfirm --onedir --windowed --icon=assets/icon.ico --name "DailyGameLauncher" main.py
 
 echo Building updater...
 pyinstaller --noconfirm --onefile --windowed --icon=NONE --name "updater" updater.py

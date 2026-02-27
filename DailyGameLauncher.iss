@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "日課ツール"
-#define MyAppVersion "2.1.0"
+#define MyAppVersion "3.0.1"
 #define MyAppPublisher "aarubikarubi"
 #define MyAppURL "https://github.com/aarubikarubi/DailyGameLauncher"
 #define MyAppExeName "DailyGameLauncher.exe"
@@ -23,7 +23,7 @@ DisableProgramGroupPage=yes
 ; Require lower privileges so it installs in user space 
 PrivilegesRequired=lowest
 OutputDir=dist
-OutputBaseFilename=DailyGameLauncher_v2.1.0_Setup
+OutputBaseFilename=DailyGameLauncher_v3.0.1_Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
