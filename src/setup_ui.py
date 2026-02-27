@@ -1,0 +1,1318 @@
+import sys
+import os
+import json
+import winreg
+import urllib.parse
+import webbrowser
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QLabel, QLineEdit, QPushButton, QComboBox, QScrollArea, QFrame,
+    QStackedWidget, QFileDialog, QMessageBox, QSpacerItem, QSizePolicy, QToolTip,
+    QInputDialog
+)
+from PyQt6.QtCore import (
+    Qt, QPropertyAnimation, pyqtProperty, QEasingCurve, QTimer, QCoreApplication,
+    pyqtSignal, QObject
+)
+from PyQt6.QtGui import QColor, QPainter, QBrush, QPen, QFont, QCursor, QPalette
+
+# モダンなQSSスタイル
+MODERN_QSS = """
+QMainWindow {
+    background-color: #f5f5f7;
+}
+QToolTip {
+    background-color: #ffffff !important;
+    color: #333333 !important;
+    border: 1px solid #cccccc !important;
+    border-radius: 4px !important;
+    padding: 4px !important;
+    font-size: 13px !important;
+}
+QFrame#Card {
+    background-color: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e5e5ea;
+}
+QLabel {
+    color: #1d1d1f;
+    font-size: 14px;
+}
+QLabel#Title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #1d1d1f;
+}
+QLabel#StepTitle {
+    font-size: 14px;
+    font-weight: bold;
+    color: #ffffff;
+    background-color: #007aff;
+    border-radius: 10px;
+    padding: 4px 10px;
+}
+QLineEdit {
+    background-color: #f2f2f7;
+    border: 1px solid #e5e5ea;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 14px;
+    color: #1d1d1f;
+}
+QLineEdit:focus {
+    border: 2px solid #007aff;
+    background-color: #ffffff;
+}
+QPushButton {
+    background-color: #ffffff;
+    border: 1px solid #d1d1d6;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #131313;
+}
+QPushButton:hover {
+    background-color: #f2f2f7;
+}
+QPushButton:pressed {
+    background-color: #e5e5ea;
+}
+QPushButton:disabled {
+    background-color: #e5e5ea;
+    color: #8e8e93;
+    border: 1px solid #d1d1d6;
+}
+QPushButton#PrimaryButton {
+    background-color: #007aff !important;
+    border: none;
+    color: #131313 !important;
+    font-weight: bold;
+}
+QPushButton#PrimaryButton:hover {
+    background-color: #006ee6 !important;
+}
+QPushButton#PrimaryButton:pressed {
+    background-color: #005bb5 !important;
+}
+QPushButton#PrimaryButton:disabled {
+    background-color: #b2d7ff !important;
+    color: #131313 !important;
+}
+QPushButton#DangerButton {
+    background-color: #ff3b30 !important;
+    border: none;
+    color: #131313 !important;
+    font-weight: bold;
+}
+QPushButton#DangerButton:hover {
+    background-color: #ff2d20 !important;
+}
+QPushButton#DangerButton:disabled {
+    background-color: #ffb3ae !important;
+    color: #131313 !important;
+}
+QPushButton#WarningButton {
+    background-color: #ffcc00 !important;
+    border: none;
+    color: #131313 !important;
+    font-weight: bold;
+}
+QPushButton#WarningButton:hover {
+    background-color: #e6b800 !important;
+}
+QPushButton#WarningButton:disabled {
+    background-color: #fff0b3 !important;
+    color: #131313 !important;
+}
+QPushButton#SidebarButton {
+    text-align: left;
+    background-color: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    color: #4a4a4a;
+}
+QPushButton#SidebarButton:hover {
+    background-color: #e5e5ea;
+}
+QPushButton#SidebarButtonActive {
+    text-align: left;
+    background-color: #e5e5ea;
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    color: #1d1d1f;
+    font-weight: bold;
+}
+QComboBox {
+    background-color: #f2f2f7;
+    border: 1px solid #e5e5ea;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 14px;
+    color: #1d1d1f;
+}
+QComboBox::drop-down {
+    border: none;
+}
+QScrollArea {
+    border: none;
+    background-color: transparent;
+}
+QScrollBar:vertical {
+    border: none;
+    background: #f5f5f7;
+    width: 8px;
+    border-radius: 4px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: #c7c7cc;
+    min-height: 20px;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #aeaeb2;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QLabel#HelpIcon {
+    color: #8e8e93;
+    background-color: #f2f2f7;
+    border: 1px solid #d1d1d6;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 1px 5px;
+    min-width: 16px;
+    max-width: 16px;
+    min-height: 16px;
+    max-height: 16px;
+}
+QLabel#HelpIcon:hover {
+    background-color: #007aff;
+    color: #ffffff;
+    border-color: #007aff;
+}
+"""
+
+class ToggleSwitch(QWidget):
+    def __init__(self, parent=None, is_checked=False):
+        super().__init__(parent)
+        self.setFixedSize(50, 26)
+        self._checked = is_checked
+        self._position = 22 if is_checked else 4
+        self.animation = QPropertyAnimation(self, b"position")
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self.animation.setDuration(200)
+
+    @pyqtProperty(float)
+    def position(self):
+        return self._position
+
+    @position.setter
+    def position(self, pos):
+        self._position = pos
+        self.update()
+
+    def isChecked(self):
+        return self._checked
+
+    def setChecked(self, checked):
+        if self._checked != checked:
+            self._checked = checked
+            self.animation.setEndValue(22 if checked else 4)
+            self.animation.start()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setChecked(not self._checked)
+            super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Background
+        p.setPen(Qt.PenStyle.NoPen)
+        bg_color = QColor("#34c759") if self._checked else QColor("#e5e5ea")
+        p.setBrush(QBrush(bg_color))
+        p.drawRoundedRect(0, 0, self.width(), self.height(), 13, 13)
+        
+        # Knob (with slight shadow)
+        p.setBrush(QBrush(QColor("#ffffff")))
+        p.setPen(QPen(QColor("#d1d1d6"), 1))
+        # Add a subtle fake shadow via multiple circles
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(0, 0, 0, 30)))
+        p.drawEllipse(int(self._position), 4, 18, 18)
+        
+        p.setBrush(QBrush(QColor("#ffffff")))
+        p.drawEllipse(int(self._position), 3, 18, 18)
+        p.end()
+
+class ModernWindow(QMainWindow):
+    def __init__(self, config_path, on_close_callback, monitor):
+        super().__init__()
+        self.config_path = config_path
+        self.on_close_callback = on_close_callback
+        self.monitor = monitor
+        
+        self.games = []
+        self.launch_interval = 5
+        self.kill_targets = ["なし", "なし", "なし"]
+        self.run_on_startup = False
+        self.auto_exit = False
+        self.show_on_startup = True  # 起動時に設定画面を表示するか
+        self.current_selected_index = None # None means App Settings
+        
+        # Multiple Profiles
+        self.active_profile = "デフォルト"
+        self.profiles = {}
+        
+        # Smart Wait
+        self.smart_wait_enabled = False
+        self.cpu_threshold = 30
+        self.smart_wait_timeout = 60
+        
+        self.load_config()
+        self.init_ui()
+
+    def load_config(self):
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                    
+                    # 構造移行 (Migration)
+                    if "profiles" not in config:
+                        old_games = config.get("games", [])
+                        old_interval = config.get("launch_interval", 5)
+                        old_kills = config.get("kill_targets", [])
+                        old_auto_exit = config.get("auto_exit_after_completion", False)
+                        self.profiles = {
+                            "デフォルト": {
+                                "games": old_games,
+                                "launch_interval": old_interval,
+                                "kill_targets": old_kills,
+                                "auto_exit_after_completion": old_auto_exit
+                            }
+                        }
+                        self.active_profile = "デフォルト"
+                    else:
+                        self.profiles = config.get("profiles", {})
+                        self.active_profile = config.get("active_profile", "デフォルト")
+
+                    # スマート待機
+                    sw_cfg = config.get("smart_wait", {})
+                    self.smart_wait_enabled = sw_cfg.get("enabled", False)
+                    self.cpu_threshold = sw_cfg.get("cpu_threshold", 30)
+                    self.smart_wait_timeout = sw_cfg.get("timeout", 60)
+
+                    self.show_on_startup = config.get("show_on_startup", True)
+                    self.run_on_startup = config.get("run_on_startup", False)
+
+                    # 現在のプロファイルを反映
+                    p = self.profiles.get(self.active_profile, {})
+                    self.games = p.get("games", [])
+                    self.launch_interval = p.get("launch_interval", 5)
+                    loaded_kills = p.get("kill_targets", [])
+                    self.kill_targets = (loaded_kills + ["なし", "なし", "なし"])[:3]
+                    self.auto_exit = p.get("auto_exit_after_completion", False)
+
+                if self.monitor:
+                    self.monitor.auto_exit_after_completion = self.auto_exit
+                    self.monitor.smart_wait_enabled = self.smart_wait_enabled
+                    self.monitor.cpu_threshold = self.cpu_threshold
+                    self.monitor.smart_wait_timeout = self.smart_wait_timeout
+            except Exception as e:
+                print(f"Failed to load config: {e}")
+
+    def save_config(self):
+        try:
+            # fetch current app settings before saving
+            try:
+                self.launch_interval = int(self.interval_entry.text())
+                self.cpu_threshold = int(self.cpu_entry.text())
+                self.smart_wait_timeout = int(self.sw_timeout_entry.text())
+            except (ValueError, AttributeError):
+                pass
+                
+            self.kill_targets = [
+                self.kill_combo_1.currentText(),
+                self.kill_combo_2.currentText(),
+                self.kill_combo_3.currentText()
+            ]
+            self.run_on_startup = self.startup_toggle.isChecked()
+            self.auto_exit = self.auto_exit_toggle.isChecked()
+            self.show_on_startup = self.show_on_startup_toggle.isChecked()
+            self.smart_wait_enabled = self.sw_toggle.isChecked()
+            
+            # Sync current state to current active profile
+            self.sync_current_profile_input()
+            
+            self.profiles[self.active_profile] = {
+                "games": self.games,
+                "launch_interval": self.launch_interval,
+                "kill_targets": self.kill_targets,
+                "auto_exit_after_completion": self.auto_exit
+            }
+            
+            config_data = {
+                "active_profile": self.active_profile,
+                "profiles": self.profiles,
+                "smart_wait": {
+                    "enabled": self.smart_wait_enabled,
+                    "cpu_threshold": self.cpu_threshold,
+                    "timeout": self.smart_wait_timeout
+                },
+                "run_on_startup": self.run_on_startup,
+                "show_on_startup": self.show_on_startup
+            }
+            
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
+                
+            if self.monitor:
+                self.monitor.auto_exit_after_completion = self.auto_exit
+                self.monitor.smart_wait_enabled = self.smart_wait_enabled
+                self.monitor.cpu_threshold = self.cpu_threshold
+                self.monitor.smart_wait_timeout = self.smart_wait_timeout
+                self.monitor.profiles = self.profiles
+                self.monitor.apply_profile(self.active_profile)
+                
+            self.set_run_on_startup(self.run_on_startup)
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"設定の保存に失敗しました:\n{e}")
+            return False
+
+    def set_run_on_startup(self, enable):
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "DailyGameLauncher"
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
+            if enable:
+                if getattr(sys, 'frozen', False):
+                    cmd = f'"{sys.executable}" --startup'
+                else:
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                    main_py_path = os.path.join(base_dir, "main.py")
+                    pythonw_path = sys.executable.replace("python.exe", "pythonw.exe")
+                    if not os.path.exists(pythonw_path):
+                        pythonw_path = sys.executable
+                    cmd = f'"{pythonw_path}" "{main_py_path}" --startup'
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, cmd)
+            else:
+                try:
+                    winreg.DeleteValue(key, app_name)
+                except FileNotFoundError:
+                    pass
+            winreg.CloseKey(key)
+        except Exception as e:
+            print(f"Failed to set startup registry: {e}")
+
+    def init_ui(self):
+        self.setWindowTitle("日課ツール 登録設定")
+        self.resize(900, 650)
+        self.setMinimumSize(850, 600)
+        
+        central = QWidget()
+        self.setCentralWidget(central)
+        
+        main_layout = QHBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # --- Sidebar ---
+        self.sidebar = QFrame()
+        self.sidebar.setFixedWidth(260)
+        self.sidebar.setStyleSheet("QFrame { background-color: #ffffff; border-right: 1px solid #e5e5ea; }")
+        sidebar_layout = QVBoxLayout(self.sidebar)
+        sidebar_layout.setContentsMargins(20, 30, 20, 30)
+        
+        title = QLabel("設定メニュー")
+        title.setObjectName("Title")
+        sidebar_layout.addWidget(title)
+        sidebar_layout.addSpacing(20)
+        
+        # Profile Selector
+        ps_lbl = QLabel("使用するリスト (プロファイル)")
+        ps_lbl.setStyleSheet("color: #8e8e93; font-size: 12px; font-weight: bold;")
+        sidebar_layout.addWidget(ps_lbl)
+        
+        ps_row = QHBoxLayout()
+        self.profile_combo = QComboBox()
+        self.profile_combo.addItems(list(self.profiles.keys()))
+        self.profile_combo.setCurrentText(self.active_profile)
+        self.profile_combo.currentTextChanged.connect(self.on_switch_profile)
+        
+        add_ps_btn = QPushButton("+")
+        add_ps_btn.setFixedSize(30, 30)
+        add_ps_btn.setToolTip("新しいプロファイルを作成します。")
+        add_ps_btn.clicked.connect(self.action_add_profile_group)
+        
+        del_ps_btn = QPushButton("×")
+        del_ps_btn.setFixedSize(30, 30)
+        del_ps_btn.setToolTip("現在のプロファイルを削除します。")
+        del_ps_btn.clicked.connect(self.action_delete_profile_group)
+        
+        ps_row.addWidget(self.profile_combo, 1)
+        ps_row.addWidget(add_ps_btn)
+        ps_row.addWidget(del_ps_btn)
+        sidebar_layout.addLayout(ps_row)
+        sidebar_layout.addSpacing(15)
+        
+        self.app_settings_btn = QPushButton("⚙ アプリ全体設定")
+        self.app_settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.app_settings_btn.clicked.connect(self.show_app_settings)
+        sidebar_layout.addWidget(self.app_settings_btn)
+        
+        sidebar_layout.addSpacing(15)
+        prof_lbl = QLabel("ゲームプロファイル")
+        prof_lbl.setStyleSheet("color: #8e8e93; font-size: 12px; font-weight: bold;")
+        sidebar_layout.addWidget(prof_lbl)
+        
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_content = QWidget()
+        self.scroll_layout = QVBoxLayout(self.scroll_content)
+        self.scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.scroll_area.setWidget(self.scroll_content)
+        sidebar_layout.addWidget(self.scroll_area)
+        
+        btn_layout = QHBoxLayout()
+        add_btn = QPushButton("+ 追加")
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setToolTip("新しいゲームプロファイルを追加します。")
+        add_btn.clicked.connect(self.add_profile)
+        self.del_btn = QPushButton("🗑 削除")
+        self.del_btn.setObjectName("DangerButton")
+        self.del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.del_btn.setToolTip("選択中のゲームプロファイルを削除します。")
+        self.del_btn.clicked.connect(self.delete_profile)
+        btn_layout.addWidget(add_btn)
+        btn_layout.addWidget(self.del_btn)
+        sidebar_layout.addLayout(btn_layout)
+        
+        # Feedback button at the bottom of sidebar
+        sidebar_layout.addSpacing(20)
+        feedback_btn = QPushButton("💡 要望・バグ報告を送る")
+        feedback_btn.setObjectName("SidebarButton")
+        feedback_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        feedback_btn.setToolTip("ブラウザを開いて開発者にメッセージやエラーログを送信します。")
+        feedback_btn.clicked.connect(self.action_open_feedback)
+        sidebar_layout.addWidget(feedback_btn)
+
+        # --- Main Content Area ---
+        self.main_content = QWidget()
+        mc_layout = QVBoxLayout(self.main_content)
+        mc_layout.setContentsMargins(40, 30, 40, 30)
+        
+        # Header
+        header_layout = QHBoxLayout()
+        self.content_title = QLabel("アプリ全体設定")
+        self.content_title.setObjectName("Title")
+        
+        save_btn = QPushButton("保存して適用")
+        save_btn.setObjectName("PrimaryButton")
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setToolTip("設定を保存し、ランチャーへ適用します。")
+        save_btn.clicked.connect(self.save_and_close)
+        
+        header_layout.addWidget(self.content_title)
+        header_layout.addStretch()
+        header_layout.addWidget(self.make_help_icon("変更した設定や追加したゲームの情報を保存して、すぐに使える状態にします。"))
+        header_layout.addSpacing(10)
+        header_layout.addWidget(save_btn)
+        mc_layout.addLayout(header_layout)
+        mc_layout.addSpacing(20)
+        
+        # Scroll Area for the main content (to prevent text squashing)
+        self.main_scroll = QScrollArea()
+        self.main_scroll.setWidgetResizable(True)
+        self.main_scroll.setObjectName("MainScroll")
+        self.main_scroll.setStyleSheet("QScrollArea#MainScroll { background-color: transparent; border: none; }")
+        
+        self.scroll_widget = QWidget()
+        self.scroll_widget.setStyleSheet("background-color: transparent;")
+        self.scroll_vbox = QVBoxLayout(self.scroll_widget)
+        self.scroll_vbox.setContentsMargins(0, 0, 0, 0)
+        
+        # Stacked Widget
+        self.stacked = QStackedWidget()
+        
+        self.app_settings_card = QFrame()
+        self.app_settings_card.setObjectName("Card")
+        self.init_app_settings(self.app_settings_card)
+        self.stacked.addWidget(self.app_settings_card)
+        
+        self.profile_card = QFrame()
+        self.profile_card.setObjectName("Card")
+        self.init_profile_settings(self.profile_card)
+        self.stacked.addWidget(self.profile_card)
+        
+        self.scroll_vbox.addWidget(self.stacked)
+        self.main_scroll.setWidget(self.scroll_widget)
+        
+        mc_layout.addWidget(self.main_scroll)
+        
+        # Assemble
+        main_layout.addWidget(self.sidebar)
+        main_layout.addWidget(self.main_content)
+        
+        self.refresh_sidebar()
+        self.show_app_settings()
+
+    def on_switch_profile(self, profile_name):
+        if profile_name == self.active_profile:
+            return
+            
+        # 今のプロファイルの内容を退避
+        self.save_to_profiles_cache()
+        
+        # 切り替え
+        p = self.profiles.get(profile_name)
+        if p:
+            self.active_profile = profile_name
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = (p.get("kill_targets", []) + ["なし", "なし", "なし"])[:3]
+            self.auto_exit = p.get("auto_exit_after_completion", False)
+            
+            # UIの更新
+            self.refresh_sidebar()
+            self.show_app_settings()
+            print(f"Switched profile to: {profile_name}")
+
+    def action_add_profile_group(self):
+        new_name, ok = QFileDialog.getSaveFileName(self, "新規プロファイル名を入力", "新しい日課リスト", "")
+        # getSaveFileNameは不適切なのでQInputDialogを使いたいがPyQt6.QtWidgetsからインポートしてない。
+        # 代わりに簡易的な名前生成にするか、InputDialogをインポートして使う。
+        # ここでは「日課リスト 2」のように自動生成する
+        count = 1
+        proposed = f"日課リスト {count}"
+        while proposed in self.profiles:
+            count += 1
+            proposed = f"日課リスト {count}"
+            
+        self.save_to_profiles_cache()
+        self.profiles[proposed] = {
+            "games": [],
+            "launch_interval": 5,
+            "kill_targets": ["なし", "なし", "なし"],
+            "auto_exit_after_completion": False
+        }
+        self.active_profile = proposed
+        self.refresh_profile_list_ui()
+        self.on_switch_profile(proposed)
+        QMessageBox.information(self, "完了", f"プロファイル「{proposed}」を作成しました。")
+
+    def action_delete_profile_group(self):
+        if len(self.profiles) <= 1:
+            QMessageBox.warning(self, "エラー", "最後のプロファイルは削除できません。")
+            return
+            
+        reply = QMessageBox.question(self, "確認", f"プロファイル「{self.active_profile}」を削除してもよろしいですか？",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            old_name = self.active_profile
+            del self.profiles[old_name]
+            self.active_profile = list(self.profiles.keys())[0]
+            self.refresh_profile_list_ui()
+            # 強制切り替え
+            p = self.profiles[self.active_profile]
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = (p.get("kill_targets", []) + ["なし", "なし", "なし"])[:3]
+            self.auto_exit = p.get("auto_exit_after_completion", False)
+            
+            self.refresh_sidebar()
+            self.show_app_settings()
+
+    def save_to_profiles_cache(self):
+        """現在編集中の値を profiles ディクショナリに同期する"""
+        self.sync_current_profile_input()
+        
+        # App Settingsの値も読み取る
+        try:
+            self.launch_interval = int(self.interval_entry.text())
+        except (ValueError, AttributeError):
+            pass
+            
+        self.profiles[self.active_profile] = {
+            "games": self.games,
+            "launch_interval": self.launch_interval,
+            "kill_targets": self.kill_targets,
+            "auto_exit_after_completion": self.auto_exit
+        }
+
+    def refresh_profile_list_ui(self):
+        """プロファイル選択ドロップダウンのリストを更新する"""
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(list(self.profiles.keys()))
+        self.profile_combo.setCurrentText(self.active_profile)
+        self.profile_combo.blockSignals(False)
+
+    def action_open_feedback(self):
+        base_url = "https://github.com/aarubikarubi/DailyGameLauncher/issues/new"
+        params = {
+            "title": "【要望・報告】",
+            "body": "ここに機能の要望やバグ報告を書いてください。\n\n---\n環境情報:\nOS: Windows\n",
+            "labels": "enhancement"
+        }
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        webbrowser.open(url)
+
+    @staticmethod
+    def make_help_icon(tooltip_text: str):
+        """モダンな「？」ヘルプアイコンQLabelを生成して返す (色固定のHTMLツールチップ)"""
+        icon = QLabel("?")
+        icon.setObjectName("HelpIcon")
+        
+        # HTMLリッチテキストで色を物理的に固定
+        html_text = (
+            f"<div style='background-color: #ffffff; color: #333333; "
+            f"padding: 5px; border: 1px solid #cccccc; border-radius: 4px;'>"
+            f"{tooltip_text}</div>"
+        )
+        icon.setToolTip(html_text)
+        
+        icon.setCursor(Qt.CursorShape.WhatsThisCursor)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        return icon
+
+    def init_app_settings(self, container):
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(15)
+
+        hi = self.make_help_icon  # shortcut
+
+        # ── 待機時間 ──
+        int_layout = QHBoxLayout()
+        int_lbl = QLabel("次のゲームを開くまでの待ち時間 (秒):")
+        int_lbl.setWordWrap(True)
+        self.interval_entry = QLineEdit(str(self.launch_interval))
+        self.interval_entry.setFixedWidth(80)
+        int_layout.addWidget(int_lbl, 1)
+        int_layout.addWidget(self.interval_entry)
+        int_layout.addSpacing(6)
+        int_layout.addWidget(hi("PCのカクつきを防ぐための準備時間です。性能が低いPCの場合は長めに設定してください。"))
+        layout.addLayout(int_layout)
+
+        # ── 裏方アプリ ──
+        kill_header = QHBoxLayout()
+        kh_lbl = QLabel("一緒に閉じる裏方アプリ (ゲーム終了時):")
+        kh_lbl.setWordWrap(True)
+        kill_header.addWidget(kh_lbl, 1)
+        kill_header.addSpacing(6)
+        kill_header.addWidget(hi("ゲーム終了時に、SteamやHoYoPlayなどの重いランチャーを自動で終了させてPCを軽くします。"))
+        layout.addLayout(kill_header)
+
+        kill_opts = ["なし", "HoYoPlay (hoyoplay.exe)", "Steam (steam.exe)", "Epic Games (EpicGamesLauncher.exe)"]
+        self.kill_combo_1 = QComboBox(); self.kill_combo_1.addItems(kill_opts); self.kill_combo_1.setCurrentText(self.kill_targets[0])
+        self.kill_combo_2 = QComboBox(); self.kill_combo_2.addItems(kill_opts); self.kill_combo_2.setCurrentText(self.kill_targets[1])
+        self.kill_combo_3 = QComboBox(); self.kill_combo_3.addItems(kill_opts); self.kill_combo_3.setCurrentText(self.kill_targets[2])
+        layout.addWidget(self.kill_combo_1)
+        layout.addWidget(self.kill_combo_2)
+        layout.addWidget(self.kill_combo_3)
+        layout.addSpacing(10)
+
+        # ── トグルの共通ヘルパー ──
+        def make_toggle_row(toggle_widget, label_text, help_text):
+            row = QHBoxLayout()
+            row.addWidget(toggle_widget)
+            row.addSpacing(8)
+            t_lbl = QLabel(label_text)
+            t_lbl.setWordWrap(True)
+            row.addWidget(t_lbl, 1)
+            row.addSpacing(6)
+            row.addWidget(hi(help_text))
+            return row
+
+        self.startup_toggle = ToggleSwitch(is_checked=self.run_on_startup)
+        layout.addLayout(make_toggle_row(
+            self.startup_toggle,
+            "PC起動時に自動で開始する",
+            "Windows起動時に、タスクトレイに常駐するようになります。"
+        ))
+
+        self.auto_exit_toggle = ToggleSwitch(is_checked=self.auto_exit)
+        layout.addLayout(make_toggle_row(
+            self.auto_exit_toggle,
+            "日課完了後にこのツールを自動終了する",
+            "登録した全てのゲームを通しでプレイし終わった後、このランチャーも自ら終了します。"
+        ))
+
+        self.show_on_startup_toggle = ToggleSwitch(is_checked=self.show_on_startup)
+        layout.addLayout(make_toggle_row(
+            self.show_on_startup_toggle,
+            "アプリ起動時にこのウィンドウを表示する",
+            "ONにすると起動時にこの画面が開くので、初めての方でも安心です。慣れてきたらOFFにするとバックグラウンドで静かに待機します。"
+        ))
+
+        # ── スマート待機 ──
+        layout.addSpacing(10)
+        line = QFrame(); line.setFrameShape(QFrame.Shape.HLine); line.setStyleSheet("border: 0.5px solid #e5e5ea;"); layout.addWidget(line)
+        layout.addSpacing(10)
+        
+        sw_title = QHBoxLayout()
+        sw_title.addWidget(QLabel("🌊 スマート待機 (CPU負荷検知)"))
+        sw_title.addWidget(hi("次のゲームを起動する前に、PCの負荷（CPU使用率）が下がるのを自動で待ちます。起動時のカクつきを最小限に抑えます。"))
+        sw_title.addStretch()
+        layout.addLayout(sw_title)
+        
+        self.sw_toggle = ToggleSwitch(is_checked=self.smart_wait_enabled)
+        layout.addLayout(make_toggle_row(
+            self.sw_toggle,
+            "スマート待機を有効にする",
+            "ONにすると、CPU使用率が指定以下になるまでゲームの起動を遅らせます。"
+        ))
+        
+        sw_params = QHBoxLayout()
+        sw_levels_lbl = QLabel("CPU負荷が ")
+        self.cpu_entry = QLineEdit(str(self.cpu_threshold))
+        self.cpu_entry.setFixedWidth(50)
+        sw_levels_lbl2 = QLabel(" % 以下になるまで待つ (最大 ")
+        self.sw_timeout_entry = QLineEdit(str(self.smart_wait_timeout))
+        self.sw_timeout_entry.setFixedWidth(50)
+        sw_levels_lbl3 = QLabel(" 秒)")
+        
+        sw_params.addWidget(sw_levels_lbl)
+        sw_params.addWidget(self.cpu_entry)
+        sw_params.addWidget(sw_levels_lbl2)
+        sw_params.addWidget(self.sw_timeout_entry)
+        sw_params.addWidget(sw_levels_lbl3)
+        sw_params.addStretch()
+        layout.addLayout(sw_params)
+
+        layout.addStretch()
+
+        start_routine_btn = QPushButton("▶ 日課を開始 (1番目のゲームを起動)")
+        start_routine_btn.setObjectName("PrimaryButton")
+        start_routine_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        tt = "登録したリストの順番にゲームを自動起動します。"
+        start_routine_btn.setToolTip(f"<div style='background-color: #ffffff; color: #333333; padding: 5px; border: 1px solid #cccccc;'>{tt}</div>")
+        start_routine_btn.clicked.connect(self.action_start_routine)
+        layout.addWidget(start_routine_btn)
+
+        reset_btn = QPushButton("❌ すべてのゲームをリセット")
+        reset_btn.setObjectName("DangerButton")
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset_btn.clicked.connect(self.action_reset_all)
+        
+        reset_layout = QHBoxLayout()
+        reset_layout.addWidget(reset_btn)
+        reset_layout.addStretch()
+        layout.addLayout(reset_layout)
+
+    def init_profile_settings(self, container):
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(15)
+        
+        hi = self.make_help_icon  # shortcut
+        
+        # Step Label
+        self.step_label = QLabel("No. 1")
+        self.step_label.setObjectName("StepTitle")
+        self.step_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.step_label)
+        
+        # Name
+        name_layout = QHBoxLayout()
+        name_lbl = QLabel("ゲーム表示名:")
+        self.prof_name_entry = QLineEdit()
+        self.prof_name_entry.textChanged.connect(self.on_profile_edit)
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItems(["プリセット...", "原神", "崩壊：スターレイル", "鳴潮"])
+        self.preset_combo.currentTextChanged.connect(self.on_preset_selected)
+        name_layout.addWidget(name_lbl)
+        name_layout.addWidget(self.prof_name_entry, 1)
+        name_layout.addWidget(self.preset_combo)
+        layout.addLayout(name_layout)
+        
+        # Process
+        proc_layout = QHBoxLayout()
+        proc_lbl = QLabel("プロセス名 (例: Game.exe):")
+        tt = "このプロセスが立ち上がっている間は「プレイ中」と判定し、終了したら次のゲームに行きます。"
+        proc_lbl.setToolTip(f"<div style='background-color: #ffffff; color: #333333; padding: 5px; border: 1px solid #cccccc;'>{tt}</div>")
+        self.prof_proc_entry = QLineEdit()
+        self.prof_proc_entry.textChanged.connect(self.on_profile_edit)
+        proc_layout.addWidget(proc_lbl)
+        proc_layout.addWidget(self.prof_proc_entry, 1)
+        layout.addLayout(proc_layout)
+        
+        # Path
+        path_layout = QVBoxLayout()
+        path_lbl = QLabel("実行ファイルパス:")
+        tt = "自動検出が失敗した場合は、「参照」からゲーム本体の .exe を選んでください。"
+        path_lbl.setToolTip(f"<div style='background-color: #ffffff; color: #333333; padding: 5px; border: 1px solid #cccccc;'>{tt}</div>")
+        path_input_lyt = QHBoxLayout()
+        self.prof_path_entry = QLineEdit()
+        self.prof_path_entry.textChanged.connect(self.on_profile_edit)
+        browse_btn = QPushButton("参照...")
+        browse_btn.clicked.connect(self.browse_file)
+        detect_btn = QPushButton("✨自動検出")
+        detect_btn.setObjectName("WarningButton")
+        tt = "レジストリや標準的なインストールパスからゲームを自動で探します。まずはゲーム表示名を入力してください。"
+        detect_btn.setToolTip(f"<div style='background-color: #ffffff; color: #333333; padding: 5px; border: 1px solid #cccccc;'>{tt}</div>")
+        detect_btn.clicked.connect(self.auto_detect)
+        path_input_lyt.addWidget(self.prof_path_entry)
+        path_input_lyt.addWidget(browse_btn)
+        path_input_lyt.addWidget(detect_btn)
+        path_input_lyt.addSpacing(6)
+        path_input_lyt.addWidget(hi("ゲームがインストールされている場所をPC内から自動で探して入力します。手動で探す手間が省けます！"))
+        path_layout.addWidget(path_lbl)
+        path_layout.addLayout(path_input_lyt)
+        layout.addLayout(path_layout)
+        
+        # Order Control
+        order_lyt = QHBoxLayout()
+        up_btn = QPushButton("↑ 順番を上げる")
+        up_btn.clicked.connect(self.move_up)
+        down_btn = QPushButton("↓ 順番を下げる")
+        down_btn.clicked.connect(self.move_down)
+        order_lyt.addWidget(up_btn)
+        order_lyt.addWidget(down_btn)
+        order_lyt.addStretch()
+        layout.addLayout(order_lyt)
+        
+        # Line
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("border: 1px solid #e5e5ea;")
+        layout.addWidget(line)
+        
+        # Launch overrides
+        laun_lyt = QHBoxLayout()
+        launch_btn = QPushButton("▶ このゲームを起動")
+        launch_btn.setStyleSheet("background-color: #34c759; color: white; font-weight: bold; border: none;")
+        launch_btn.clicked.connect(self.launch_current)
+        
+        self.chain_toggle = ToggleSwitch(is_checked=True)
+        chain_lbl = QLabel("連続プレイモード (終了後に次のゲームへ)")
+        tt = "OFFにすると、このゲームが終了しても次のゲームを起動せずに待機状態に戻ります。"
+        chain_lbl.setToolTip(f"<div style='background-color: #ffffff; color: #333333; padding: 5px; border: 1px solid #cccccc;'>{tt}</div>")
+        
+        laun_lyt.addWidget(launch_btn)
+        laun_lyt.addSpacing(20)
+        laun_lyt.addWidget(self.chain_toggle)
+        laun_lyt.addWidget(chain_lbl)
+        laun_lyt.addStretch()
+        layout.addLayout(laun_lyt)
+        
+        layout.addStretch()
+
+    def refresh_sidebar(self):
+        # Clear layout
+        while self.scroll_layout.count():
+            item = self.scroll_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        self.sidebar_btns = []
+        for i, game in enumerate(self.games):
+            name = game.get("name", "") or "無題のゲーム"
+            btn = QPushButton(f"{i+1}. {name}")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked, idx=i: self.select_profile(idx))
+            self.scroll_layout.addWidget(btn)
+            self.sidebar_btns.append(btn)
+            
+        self.highlight_sidebar()
+
+    def highlight_sidebar(self):
+        if self.current_selected_index is None:
+            self.app_settings_btn.setObjectName("SidebarButtonActive")
+            for btn in self.sidebar_btns:
+                btn.setObjectName("SidebarButton")
+        else:
+            self.app_settings_btn.setObjectName("SidebarButton")
+            for i, btn in enumerate(self.sidebar_btns):
+                if i == self.current_selected_index:
+                    btn.setObjectName("SidebarButtonActive")
+                else:
+                    btn.setObjectName("SidebarButton")
+                    
+        self.sidebar.setStyleSheet(self.sidebar.styleSheet()) # force re-evaluate
+
+    def show_app_settings(self):
+        self.sync_current_profile_input()
+        self.current_selected_index = None
+        self.highlight_sidebar()
+        self.stacked.setCurrentWidget(self.app_settings_card)
+        self.content_title.setText("アプリ全体設定")
+        self.del_btn.setEnabled(False)
+
+    def select_profile(self, index):
+        self.sync_current_profile_input()
+        self.current_selected_index = index
+        self.highlight_sidebar()
+        game = self.games[index]
+        self.content_title.setText(f"プロファイル: {game.get('name') or '新規プロファイル'}")
+        
+        self.step_label.setText(f"No. {index + 1}")
+        # Stop signals to avoid triggering edit
+        self.prof_name_entry.blockSignals(True)
+        self.prof_proc_entry.blockSignals(True)
+        self.prof_path_entry.blockSignals(True)
+        
+        self.prof_name_entry.setText(game.get("name", ""))
+        self.prof_proc_entry.setText(game.get("process_name", ""))
+        self.prof_path_entry.setText(game.get("path", ""))
+        self.preset_combo.setCurrentIndex(0)
+        
+        self.prof_name_entry.blockSignals(False)
+        self.prof_proc_entry.blockSignals(False)
+        self.prof_path_entry.blockSignals(False)
+        
+        self.stacked.setCurrentWidget(self.profile_card)
+        self.del_btn.setEnabled(True)
+
+    def sync_current_profile_input(self):
+        if self.current_selected_index is not None and self.current_selected_index < len(self.games):
+            game = self.games[self.current_selected_index]
+            game["name"] = self.prof_name_entry.text()
+            game["process_name"] = self.prof_proc_entry.text()
+            game["path"] = self.prof_path_entry.text()
+
+    def on_profile_edit(self):
+        if self.current_selected_index is not None:
+            name = self.prof_name_entry.text()
+            self.games[self.current_selected_index]["name"] = name
+            disp_name = name or "無題のゲーム"
+            self.content_title.setText(f"プロファイル: {disp_name}")
+            if self.current_selected_index < len(self.sidebar_btns):
+                self.sidebar_btns[self.current_selected_index].setText(f"{self.current_selected_index+1}. {disp_name}")
+
+    def on_preset_selected(self, text):
+        if text != "プリセット...":
+            self.prof_name_entry.setText(text)
+            self.preset_combo.setCurrentIndex(0)
+
+    def add_profile(self):
+        self.sync_current_profile_input()
+        self.games.append({"name": "新規プロファイル", "process_name": "", "path": ""})
+        self.refresh_sidebar()
+        self.select_profile(len(self.games) - 1)
+
+    def delete_profile(self):
+        if self.current_selected_index is not None:
+            del self.games[self.current_selected_index]
+            self.refresh_sidebar()
+            self.show_app_settings()
+
+    def move_up(self):
+        idx = self.current_selected_index
+        if idx is not None and idx > 0:
+            self.sync_current_profile_input()
+            self.games[idx-1], self.games[idx] = self.games[idx], self.games[idx-1]
+            self.refresh_sidebar()
+            self.select_profile(idx - 1)
+
+    def move_down(self):
+        idx = self.current_selected_index
+        if idx is not None and idx < len(self.games) - 1:
+            self.sync_current_profile_input()
+            self.games[idx+1], self.games[idx] = self.games[idx], self.games[idx+1]
+            self.refresh_sidebar()
+            self.select_profile(idx + 1)
+
+    def browse_file(self):
+        filename, _ = QFileDialog.getOpenFileName(self, "実行ファイルを選択", "", "Executable files (*.exe);;All files (*.*)")
+        if filename:
+            filename = filename.replace("/", "\\")
+            self.prof_path_entry.setText(filename)
+            basename = os.path.basename(filename)
+            self.prof_proc_entry.setText(basename)
+            if not self.prof_name_entry.text() or self.prof_name_entry.text() == "新規プロファイル":
+                self.prof_name_entry.setText(os.path.splitext(basename)[0])
+
+    def auto_detect(self):
+        current_name = self.prof_name_entry.text().strip()
+        if not current_name or current_name == "新規プロファイル" or current_name == "無題のゲーム":
+            QMessageBox.warning(self, "エラー", "ゲーム表示名を入力するか、プリセットから選んでから「自動検出」を押してください。")
+            return
+            
+        target_exe = ""
+        registry_keywords = []
+        
+        if "スターレイル" in current_name or "star rail" in current_name.lower():
+            target_exe = "StarRail.exe"
+            registry_keywords = ["スターレイル", "Star Rail"]
+        elif "原神" in current_name or "genshin" in current_name.lower():
+            target_exe = "GenshinImpact.exe"
+            registry_keywords = ["原神", "Genshin", "HoYoPlay"] # HoYoPlay handles genshin now
+        elif "鳴潮" in current_name or "wuthering" in current_name.lower() or "wuwa" in current_name.lower():
+            target_exe = "Wuthering Waves.exe"
+            registry_keywords = ["鳴潮", "Wuthering"]
+        else:
+            target_exe = current_name + ".exe"
+            registry_keywords = [current_name]
+
+        found_path = None
+        
+        # 1. 共通の固定パスを強めに（ユーザー環境に合わせたもの）
+        common_paths = [
+            rf"C:\Program Files\HoYoPlay\games\Genshin Impact game\{target_exe}",
+            rf"D:\HoYoPlay\games\Genshin Impact game\{target_exe}",
+            rf"D:\HoYoPlay\games\Star Rail game\Games\{target_exe}",
+            rf"D:\HoYoPlay\games\Houkai3rd game\{target_exe}",
+            rf"C:\Program Files\Star Rail\Games\{target_exe}",
+            rf"D:\Star Rail\Games\{target_exe}",
+            rf"C:\Star Rail\Games\{target_exe}",
+            rf"D:\Star Rail Games\{target_exe}",
+            rf"C:\Star Rail Games\{target_exe}",
+            rf"C:\Program Files\Wuthering Waves\Wuthering Waves Game\{target_exe}",
+            rf"D:\Wuthering Waves\Wuthering Waves Game\{target_exe}",
+            rf"D:\SteamLibrary\steamapps\common\Wuthering Waves\{target_exe}",
+            rf"D:\SteamLibrary\steamapps\common\Wuthering Waves\Wuthering Waves Game\{target_exe}",
+            rf"D:\Epic Games\WutheringWaves\Wuthering Waves Game\{target_exe}",
+            rf"C:\Program Files\Epic Games\WutheringWaves\Wuthering Waves Game\{target_exe}",
+        ]
+        
+        for static_path in common_paths:
+            if os.path.exists(static_path):
+                found_path = static_path
+                break
+                
+        if not found_path:
+            # 2. レジストリ検索
+            import winreg
+            def get_install_paths(hive, flag):
+                paths = []
+                try:
+                    key_path = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+                    with winreg.OpenKey(hive, key_path, 0, winreg.KEY_READ | flag) as key:
+                        for i in range(winreg.QueryInfoKey(key)[0]):
+                            try:
+                                subkey_name = winreg.EnumKey(key, i)
+                                with winreg.OpenKey(key, subkey_name) as subkey:
+                                    display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                                    install_loc = winreg.QueryValueEx(subkey, "InstallLocation")[0]
+                                    if install_loc and any(kw.lower() in str(display_name).lower() for kw in registry_keywords):
+                                        paths.append(install_loc)
+                            except EnvironmentError:
+                                continue
+                except EnvironmentError:
+                    pass
+                return paths
+
+            install_dirs = []
+            install_dirs.extend(get_install_paths(winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_64KEY))
+            install_dirs.extend(get_install_paths(winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_32KEY))
+            install_dirs.extend(get_install_paths(winreg.HKEY_CURRENT_USER, 0))
+            
+            sub_dirs = ["", "Genshin Impact game", r"Star Rail game\Games", "Games", "Wuthering Waves Game", r"games\Genshin Impact game", r"games\Star Rail game\Games"]
+            for base_dir in install_dirs:
+                if found_path: break
+                for sub in sub_dirs:
+                    check_path = os.path.join(base_dir, sub, target_exe)
+                    if os.path.exists(check_path):
+                        found_path = check_path
+                        break
+        
+        if not found_path:
+            QMessageBox.information(self, "検出失敗", f"「{current_name}」が見つかりませんでした。手動でご選択ください。")
+            return
+            
+        self.prof_path_entry.setText(found_path.replace("/", "\\"))
+        self.prof_proc_entry.setText(os.path.basename(found_path))
+        QMessageBox.information(self, "検出成功", f"「{current_name}」が見つかりました！")
+
+    def save_and_close(self):
+        self.sync_current_profile_input()
+        for game in self.games:
+            if not game.get("name") or not game.get("process_name") or not game.get("path"):
+                QMessageBox.warning(self, "入力エラー", "未入力の項目があるプロファイルが存在します。")
+                return
+        if self.save_config():
+            if self.on_close_callback:
+                self.on_close_callback()
+            self.hide()
+
+    def action_start_routine(self):
+        if self.monitor and self.games:
+            self.monitor.start_specific_game(0, chain_launch=True)
+            self.hide()
+        elif not self.games:
+            QMessageBox.warning(self, "エラー", "ゲームが登録されていません。")
+
+    def action_reset_all(self):
+        if not self.games: return
+        ret = QMessageBox.question(self, "確認", "すべてのゲームプロファイルを削除しますか？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if ret == QMessageBox.StandardButton.Yes:
+            self.games = []
+            self.refresh_sidebar()
+            self.show_app_settings()
+            self.save_config()
+
+    def on_switch_profile(self, profile_name):
+        if profile_name == self.active_profile:
+            return
+            
+        # 今のプロファイルの内容を退避
+        self.save_to_profiles_cache()
+        
+        # 切り替え
+        p = self.profiles.get(profile_name)
+        if p:
+            self.active_profile = profile_name
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = (p.get("kill_targets", []) + ["なし", "なし", "なし"])[:3]
+            self.auto_exit = p.get("auto_exit_after_completion", False)
+            
+            # UIの更新
+            self.refresh_sidebar()
+            self.show_app_settings()
+            print(f"Switched profile to: {profile_name}")
+
+    def action_add_profile_group(self):
+        text, ok = QInputDialog.getText(self, "新規リスト作成", "リスト名を入力してください:")
+        if ok and text:
+            proposed = text.strip()
+            if proposed in self.profiles:
+                QMessageBox.warning(self, "エラー", "同名のリストが既に存在します。")
+                return
+            
+            self.save_to_profiles_cache()
+            self.profiles[proposed] = {
+                "games": [],
+                "launch_interval": 5,
+                "kill_targets": ["なし", "なし", "なし"],
+                "auto_exit_after_completion": False
+            }
+            self.active_profile = proposed
+            self.refresh_profile_list_ui()
+            self.on_switch_profile(proposed)
+            QMessageBox.information(self, "完了", f"プロファイル「{proposed}」を作成しました。")
+
+    def action_delete_profile_group(self):
+        if len(self.profiles) <= 1:
+            QMessageBox.warning(self, "エラー", "最後のプロファイルは削除できません。")
+            return
+            
+        reply = QMessageBox.question(self, "確認", f"プロファイル「{self.active_profile}」を削除してもよろしいですか？",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            old_name = self.active_profile
+            del self.profiles[old_name]
+            self.active_profile = list(self.profiles.keys())[0]
+            self.refresh_profile_list_ui()
+            # 強制切り替え
+            p = self.profiles[self.active_profile]
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = (p.get("kill_targets", []) + ["なし", "なし", "なし"])[:3]
+            self.auto_exit = p.get("auto_exit_after_completion", False)
+            
+            self.refresh_sidebar()
+            self.show_app_settings()
+
+    def save_to_profiles_cache(self):
+        """現在編集中の値を profiles ディクショナリに同期する"""
+        self.sync_current_profile_input()
+        
+        # App Settingsの値も読み取る
+        try:
+            self.launch_interval = int(self.interval_entry.text())
+        except (ValueError, AttributeError):
+            pass
+            
+        self.profiles[self.active_profile] = {
+            "games": self.games,
+            "launch_interval": self.launch_interval,
+            "kill_targets": self.kill_targets,
+            "auto_exit_after_completion": self.auto_exit
+        }
+
+    def refresh_profile_list_ui(self):
+        """プロファイル選択ドロップダウンのリストを更新する"""
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(list(self.profiles.keys()))
+        self.profile_combo.setCurrentText(self.active_profile)
+        self.profile_combo.blockSignals(False)
+
+    def launch_current(self):
+        if self.current_selected_index is not None and self.monitor:
+            path = self.prof_path_entry.text()
+            if not path or not os.path.exists(path):
+                QMessageBox.critical(self, "エラー", "パスが正しくありません。")
+                return
+            chain = self.chain_toggle.isChecked()
+            success, msg = self.monitor.start_specific_game(self.current_selected_index, chain_launch=chain)
+            if success:
+                self.hide()
+            else:
+                QMessageBox.critical(self, "失敗", msg)
+
+    def closeEvent(self, event):
+        # We override close event to just hide, unless quit_app is specifically requested
+        # Depending on user needs, since they click 'X'
+        if self.on_close_callback:
+            self.on_close_callback()
+        event.ignore()
+        self.hide()
+
+# --- Wrapper Interface for Compatibility ---
+class GameSetupApp(QObject):
+    sig_show = pyqtSignal()
+    sig_quit = pyqtSignal()
+
+    def __init__(self, config_path, on_close_callback=None, monitor=None):
+        super().__init__()
+        self.app = QApplication.instance()
+        if not self.app:
+            self.app = QApplication(sys.argv)
+        
+        # 強制的にツールチップの配色を固定する (QPalette)
+        palette = self.app.palette()
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor("#ffffff"))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor("#333333"))
+        self.app.setPalette(palette)
+        
+        self.app.setStyleSheet(MODERN_QSS)
+            # Make tooltips modern
+            
+        self.window = ModernWindow(config_path, on_close_callback, monitor)
+        self.sig_show.connect(self.show_window)
+        self.sig_quit.connect(self.quit_app)
+        
+    def safe_show(self):
+        self.sig_show.emit()
+        
+    def safe_quit(self):
+        self.sig_quit.emit()
+        
+    def mainloop(self):
+        # PyQt6 needs exec()
+        if not QApplication.instance().startingUp():
+            sys.exit(self.app.exec())
+
+    def withdraw(self):
+        self.window.hide()
+
+    def show_window(self):
+        self.window.show()
+        self.window.raise_()
+        self.window.activateWindow()
+
+    def quit_app(self):
+        self.window.on_close_callback = None # Prevent re-trigger
+        self.app.quit()
+
+if __name__ == "__main__":
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    app = GameSetupApp(os.path.join(base_dir, "config.json"), None)
+    app.show_window()
+    app.mainloop()

@@ -38,29 +38,101 @@ class GameMonitor:
         self._thread = None
         self.auto_exit_after_completion = False
         self.on_completion_callback = None
+        
+        # Multiple Profiles
+        self.active_profile = "デフォルト"
+        self.profiles = {}
+        
+        # Smart Wait
+        self.smart_wait_enabled = False
+        self.cpu_threshold = 30
+        self.smart_wait_timeout = 60
+        self.smart_wait_timer = 0
+        self._force_skip = False
+        
         self.load_config()
 
     def load_config(self):
         try:
             if not os.path.exists(self.config_path):
                 print(f"Config file not found: {self.config_path}")
+                # 初期設定の作成
+                self.profiles = {
+                    "デフォルト": {
+                        "games": [],
+                        "launch_interval": 5,
+                        "kill_targets": ["なし", "なし", "なし"],
+                        "auto_exit_after_completion": False
+                    }
+                }
                 return
+
             with open(self.config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
-                self.games = config.get("games", [])
-                self.launch_interval = config.get("launch_interval", 5)
-                self.kill_targets = config.get("kill_targets", [])
-                self.auto_exit_after_completion = config.get("auto_exit_after_completion", False)
+                
+                # 構造の移行 (旧形式 -> 新形式)
+                if "profiles" not in config:
+                    print("Migrating old config format to multi-profile format...")
+                    old_games = config.get("games", [])
+                    old_interval = config.get("launch_interval", 5)
+                    old_kills = config.get("kill_targets", [])
+                    old_auto_exit = config.get("auto_exit_after_completion", False)
+                    
+                    self.profiles = {
+                        "デフォルト": {
+                            "games": old_games,
+                            "launch_interval": old_interval,
+                            "kill_targets": old_kills,
+                            "auto_exit_after_completion": old_auto_exit
+                        }
+                    }
+                    self.active_profile = "デフォルト"
+                else:
+                    self.profiles = config.get("profiles", {})
+                    self.active_profile = config.get("active_profile", "デフォルト")
+                
+                # スマート待機設定
+                sw_cfg = config.get("smart_wait", {})
+                self.smart_wait_enabled = sw_cfg.get("enabled", False)
+                self.cpu_threshold = sw_cfg.get("cpu_threshold", 30)
+                self.smart_wait_timeout = sw_cfg.get("timeout", 60)
+
+                # アクティブプロファイルの適用
+                self.apply_profile(self.active_profile)
+
         except Exception as e:
             print(f"Failed to load config: {e}")
 
+    def apply_profile(self, profile_name):
+        if profile_name in self.profiles:
+            self.active_profile = profile_name
+            p = self.profiles[profile_name]
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = p.get("kill_targets", [])
+            self.auto_exit_after_completion = p.get("auto_exit_after_completion", False)
+            print(f"Profile applied: {profile_name}")
+            return True
+        return False
+
     def save_config(self):
         try:
-            config_data = {
+            # 現在のアクティブプロファイルを同期
+            self.profiles[self.active_profile] = {
                 "games": self.games,
                 "launch_interval": self.launch_interval,
                 "kill_targets": self.kill_targets,
                 "auto_exit_after_completion": self.auto_exit_after_completion
+            }
+
+            config_data = {
+                "active_profile": self.active_profile,
+                "profiles": self.profiles,
+                "smart_wait": {
+                    "enabled": self.smart_wait_enabled,
+                    "cpu_threshold": self.cpu_threshold,
+                    "timeout": self.smart_wait_timeout
+                }
             }
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, ensure_ascii=False, indent=2)
@@ -162,35 +234,6 @@ class GameMonitor:
             return self.launch_game(index)
         return False, "Invalid game index."
 
-    def reset_state(self):
-        self.state = State.STANDBY
-        self.waiting_for_launch = False
-        self.launch_sleep_remaining = 0
-        
-    def skip_current(self):
-        if self.state == State.STANDBY or len(self.games) == 0:
-            return
-            
-        print("Skipping current game...")
-        current_idx = int(self.state.value) - 1
-        next_idx = current_idx + 1
-        
-        self.kill_target_processes()
-        
-        if next_idx < len(self.games):
-            if self.chain_launch_active:
-                next_name = self.games[next_idx]["name"]
-                print(f"Skipped to {next_name}. Waiting interval...")
-                self.launch_sleep_remaining = self.launch_interval
-                self.state = State(next_idx + 1)
-                self.waiting_for_launch = True
-            else:
-                print("Skipped single play.")
-                self._handle_completion()
-        else:
-            print("Skipped to end. Daily sequence completed!")
-            self._handle_completion()
-
     def _handle_completion(self):
         self.state = State.STANDBY
         self.waiting_for_launch = False
@@ -198,6 +241,7 @@ class GameMonitor:
         if self.auto_exit_after_completion and self.on_completion_callback:
             print("Auto-exit is enabled. Triggering completion callback.")
             self.on_completion_callback()
+
 
     def _monitor_loop(self):
         while self._running:
@@ -209,18 +253,62 @@ class GameMonitor:
                     self.reset_state()
                     self.last_reset_date = now.date()
 
+                # 強制スキップの判定
+                if self._force_skip:
+                    self._force_skip = False
+                    current_idx = int(self.state.value) - 1
+                    if current_idx < len(self.games):
+                        print(f"Force skipping {self.games[current_idx]['name']}...")
+                        self.kill_target_processes()
+                        
+                        next_idx = current_idx + 1
+                        if self.chain_launch_active and next_idx < len(self.games):
+                            self.state = State(next_idx + 1)
+                            self.launch_sleep_remaining = self.launch_interval
+                            self.waiting_for_launch = True
+                        else:
+                            self._handle_completion()
+                    continue
+
                 # Interval Wait Routine
                 if self.launch_sleep_remaining > 0:
                     self.launch_sleep_remaining -= 1
                     if self.launch_sleep_remaining <= 0:
-                        # 待機明けたら起動
-                        current_idx = int(self.state.value) - 1
-                        if current_idx < len(self.games):
-                            self.launch_game(current_idx)
-                            # ここで改めて起動待機中フラグを有効にする（実体が上がるまで待つ）
-                            self.waiting_for_launch = True
+                        # スマート待機（CPU負荷検知）の開始
+                        if self.smart_wait_enabled:
+                            print("Starting Smart Wait (Checking CPU load)...")
+                            self.smart_wait_timer = 0
+                        else:
+                            # 通常起動
+                            current_idx = int(self.state.value) - 1
+                            if current_idx < len(self.games):
+                                self.launch_game(current_idx)
+                                self.waiting_for_launch = True
                     time.sleep(1)
                     continue
+
+                # スマート待機中のロジック
+                if self.smart_wait_enabled and self.state != State.STANDBY and self.waiting_for_launch and self.launch_sleep_remaining <= 0:
+                    # まだゲームを起動していない（インターバル終了直後）場合のみ負荷チェック
+                    current_idx = int(self.state.value) - 1
+                    current_proc = self.games[current_idx]["process_name"]
+                    
+                    if not self.is_process_running(current_proc):
+                        cpu_usage = psutil.cpu_percent(interval=0.5)
+                        self.smart_wait_timer += 0.5
+                        
+                        if cpu_usage <= self.cpu_threshold or self.smart_wait_timer >= self.smart_wait_timeout:
+                            if self.smart_wait_timer >= self.smart_wait_timeout:
+                                print(f"Smart Wait Timeout ({self.smart_wait_timeout}s). Force launching...")
+                            else:
+                                print(f"CPU usage ({cpu_usage}%) is below threshold ({self.cpu_threshold}%). Launching...")
+                            
+                            self.launch_game(current_idx)
+                            # self.waiting_for_launch はそのままTrueで、起動監視へ移る
+                        else:
+                            # 負荷が高いので待機継続
+                            time.sleep(0.5)
+                            continue
                     
                 # ゲームが未登録の場合は待機のみ
                 if not self.games:
@@ -272,6 +360,17 @@ class GameMonitor:
                 print(f"Monitor error: {e}")
             
             time.sleep(3)  # 3秒間隔でプロセスをチェック
+
+    def skip_current(self):
+        if self.state != State.STANDBY:
+            self._force_skip = True
+
+    def reset_state(self):
+        self.state = State.STANDBY
+        self.waiting_for_launch = False
+        self.launch_sleep_remaining = 0
+        self.chain_launch_active = False
+        self._force_skip = False
 
     def start(self):
         if not self._running:

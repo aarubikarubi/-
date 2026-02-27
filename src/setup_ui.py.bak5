@@ -7,7 +7,8 @@ import webbrowser
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QLineEdit, QPushButton, QComboBox, QScrollArea, QFrame,
-    QStackedWidget, QFileDialog, QMessageBox, QSpacerItem, QSizePolicy, QToolTip
+    QStackedWidget, QFileDialog, QMessageBox, QSpacerItem, QSizePolicy, QToolTip,
+    QInputDialog
 )
 from PyQt6.QtCore import (
     Qt, QPropertyAnimation, pyqtProperty, QEasingCurve, QTimer, QCoreApplication,
@@ -161,6 +162,24 @@ QScrollBar::handle:vertical:hover {
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
 }
+QLabel#HelpIcon {
+    color: #8e8e93;
+    background-color: #f2f2f7;
+    border: 1px solid #d1d1d6;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 1px 5px;
+    min-width: 16px;
+    max-width: 16px;
+    min-height: 16px;
+    max-height: 16px;
+}
+QLabel#HelpIcon:hover {
+    background-color: #007aff;
+    color: #ffffff;
+    border-color: #007aff;
+}
 """
 
 class ToggleSwitch(QWidget):
@@ -230,7 +249,17 @@ class ModernWindow(QMainWindow):
         self.kill_targets = ["なし", "なし", "なし"]
         self.run_on_startup = False
         self.auto_exit = False
+        self.show_on_startup = True  # 起動時に設定画面を表示するか
         self.current_selected_index = None # None means App Settings
+        
+        # Multiple Profiles
+        self.active_profile = "デフォルト"
+        self.profiles = {}
+        
+        # Smart Wait
+        self.smart_wait_enabled = False
+        self.cpu_threshold = 30
+        self.smart_wait_timeout = 60
         
         self.load_config()
         self.init_ui()
@@ -240,24 +269,60 @@ class ModernWindow(QMainWindow):
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     config = json.load(f)
-                    self.games = config.get("games", [])
-                    self.launch_interval = config.get("launch_interval", 5)
-                    loaded_kills = config.get("kill_targets", [])
-                    self.kill_targets = (loaded_kills + ["なし", "なし", "なし"])[:3]
+                    
+                    # 構造移行 (Migration)
+                    if "profiles" not in config:
+                        old_games = config.get("games", [])
+                        old_interval = config.get("launch_interval", 5)
+                        old_kills = config.get("kill_targets", [])
+                        old_auto_exit = config.get("auto_exit_after_completion", False)
+                        self.profiles = {
+                            "デフォルト": {
+                                "games": old_games,
+                                "launch_interval": old_interval,
+                                "kill_targets": old_kills,
+                                "auto_exit_after_completion": old_auto_exit
+                            }
+                        }
+                        self.active_profile = "デフォルト"
+                    else:
+                        self.profiles = config.get("profiles", {})
+                        self.active_profile = config.get("active_profile", "デフォルト")
+
+                    # スマート待機
+                    sw_cfg = config.get("smart_wait", {})
+                    self.smart_wait_enabled = sw_cfg.get("enabled", False)
+                    self.cpu_threshold = sw_cfg.get("cpu_threshold", 30)
+                    self.smart_wait_timeout = sw_cfg.get("timeout", 60)
+
+                    self.show_on_startup = config.get("show_on_startup", True)
                     self.run_on_startup = config.get("run_on_startup", False)
-                    self.auto_exit = config.get("auto_exit_after_completion", False)
+
+                    # 現在のプロファイルを反映
+                    p = self.profiles.get(self.active_profile, {})
+                    self.games = p.get("games", [])
+                    self.launch_interval = p.get("launch_interval", 5)
+                    loaded_kills = p.get("kill_targets", [])
+                    self.kill_targets = (loaded_kills + ["なし", "なし", "なし"])[:3]
+                    self.auto_exit = p.get("auto_exit_after_completion", False)
+
                 if self.monitor:
                     self.monitor.auto_exit_after_completion = self.auto_exit
+                    self.monitor.smart_wait_enabled = self.smart_wait_enabled
+                    self.monitor.cpu_threshold = self.cpu_threshold
+                    self.monitor.smart_wait_timeout = self.smart_wait_timeout
             except Exception as e:
                 print(f"Failed to load config: {e}")
 
     def save_config(self):
         try:
-            # fetch current app settings before saving if they are active
+            # fetch current app settings before saving
             try:
                 self.launch_interval = int(self.interval_entry.text())
-            except ValueError:
-                self.launch_interval = 5
+                self.cpu_threshold = int(self.cpu_entry.text())
+                self.smart_wait_timeout = int(self.sw_timeout_entry.text())
+            except (ValueError, AttributeError):
+                pass
                 
             self.kill_targets = [
                 self.kill_combo_1.currentText(),
@@ -266,16 +331,29 @@ class ModernWindow(QMainWindow):
             ]
             self.run_on_startup = self.startup_toggle.isChecked()
             self.auto_exit = self.auto_exit_toggle.isChecked()
+            self.show_on_startup = self.show_on_startup_toggle.isChecked()
+            self.smart_wait_enabled = self.sw_toggle.isChecked()
             
-            # Save profile values if a profile is currently open
+            # Sync current state to current active profile
             self.sync_current_profile_input()
             
-            config_data = {
+            self.profiles[self.active_profile] = {
                 "games": self.games,
                 "launch_interval": self.launch_interval,
                 "kill_targets": self.kill_targets,
-                "run_on_startup": self.run_on_startup,
                 "auto_exit_after_completion": self.auto_exit
+            }
+            
+            config_data = {
+                "active_profile": self.active_profile,
+                "profiles": self.profiles,
+                "smart_wait": {
+                    "enabled": self.smart_wait_enabled,
+                    "cpu_threshold": self.cpu_threshold,
+                    "timeout": self.smart_wait_timeout
+                },
+                "run_on_startup": self.run_on_startup,
+                "show_on_startup": self.show_on_startup
             }
             
             with open(self.config_path, "w", encoding="utf-8") as f:
@@ -283,6 +361,11 @@ class ModernWindow(QMainWindow):
                 
             if self.monitor:
                 self.monitor.auto_exit_after_completion = self.auto_exit
+                self.monitor.smart_wait_enabled = self.smart_wait_enabled
+                self.monitor.cpu_threshold = self.cpu_threshold
+                self.monitor.smart_wait_timeout = self.smart_wait_timeout
+                self.monitor.profiles = self.profiles
+                self.monitor.apply_profile(self.active_profile)
                 
             self.set_run_on_startup(self.run_on_startup)
             return True
@@ -339,6 +422,33 @@ class ModernWindow(QMainWindow):
         sidebar_layout.addWidget(title)
         sidebar_layout.addSpacing(20)
         
+        # Profile Selector
+        ps_lbl = QLabel("使用するリスト (プロファイル)")
+        ps_lbl.setStyleSheet("color: #8e8e93; font-size: 12px; font-weight: bold;")
+        sidebar_layout.addWidget(ps_lbl)
+        
+        ps_row = QHBoxLayout()
+        self.profile_combo = QComboBox()
+        self.profile_combo.addItems(list(self.profiles.keys()))
+        self.profile_combo.setCurrentText(self.active_profile)
+        self.profile_combo.currentTextChanged.connect(self.on_switch_profile)
+        
+        add_ps_btn = QPushButton("+")
+        add_ps_btn.setFixedSize(30, 30)
+        add_ps_btn.setToolTip("新しいプロファイルを作成します。")
+        add_ps_btn.clicked.connect(self.action_add_profile_group)
+        
+        del_ps_btn = QPushButton("×")
+        del_ps_btn.setFixedSize(30, 30)
+        del_ps_btn.setToolTip("現在のプロファイルを削除します。")
+        del_ps_btn.clicked.connect(self.action_delete_profile_group)
+        
+        ps_row.addWidget(self.profile_combo, 1)
+        ps_row.addWidget(add_ps_btn)
+        ps_row.addWidget(del_ps_btn)
+        sidebar_layout.addLayout(ps_row)
+        sidebar_layout.addSpacing(15)
+        
         self.app_settings_btn = QPushButton("⚙ アプリ全体設定")
         self.app_settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.app_settings_btn.clicked.connect(self.show_app_settings)
@@ -377,7 +487,7 @@ class ModernWindow(QMainWindow):
         feedback_btn = QPushButton("💡 要望・バグ報告を送る")
         feedback_btn.setObjectName("SidebarButton")
         feedback_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        feedback_btn.setToolTip("機能の要望や不具合報告を開発者に送信します（ブラウザが開きます）。")
+        feedback_btn.setToolTip("ブラウザを開いて開発者にメッセージやエラーログを送信します。")
         feedback_btn.clicked.connect(self.action_open_feedback)
         sidebar_layout.addWidget(feedback_btn)
 
@@ -399,6 +509,8 @@ class ModernWindow(QMainWindow):
         
         header_layout.addWidget(self.content_title)
         header_layout.addStretch()
+        header_layout.addWidget(self.make_help_icon("変更した設定や追加したゲームの情報を保存して、すぐに使える状態にします。"))
+        header_layout.addSpacing(10)
         header_layout.addWidget(save_btn)
         mc_layout.addLayout(header_layout)
         mc_layout.addSpacing(20)
@@ -425,6 +537,98 @@ class ModernWindow(QMainWindow):
         self.refresh_sidebar()
         self.show_app_settings()
 
+    def on_switch_profile(self, profile_name):
+        if profile_name == self.active_profile:
+            return
+            
+        # 今のプロファイルの内容を退避
+        self.save_to_profiles_cache()
+        
+        # 切り替え
+        p = self.profiles.get(profile_name)
+        if p:
+            self.active_profile = profile_name
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = (p.get("kill_targets", []) + ["なし", "なし", "なし"])[:3]
+            self.auto_exit = p.get("auto_exit_after_completion", False)
+            
+            # UIの更新
+            self.refresh_sidebar()
+            self.show_app_settings()
+            print(f"Switched profile to: {profile_name}")
+
+    def action_add_profile_group(self):
+        new_name, ok = QFileDialog.getSaveFileName(self, "新規プロファイル名を入力", "新しい日課リスト", "")
+        # getSaveFileNameは不適切なのでQInputDialogを使いたいがPyQt6.QtWidgetsからインポートしてない。
+        # 代わりに簡易的な名前生成にするか、InputDialogをインポートして使う。
+        # ここでは「日課リスト 2」のように自動生成する
+        count = 1
+        proposed = f"日課リスト {count}"
+        while proposed in self.profiles:
+            count += 1
+            proposed = f"日課リスト {count}"
+            
+        self.save_to_profiles_cache()
+        self.profiles[proposed] = {
+            "games": [],
+            "launch_interval": 5,
+            "kill_targets": ["なし", "なし", "なし"],
+            "auto_exit_after_completion": False
+        }
+        self.active_profile = proposed
+        self.refresh_profile_list_ui()
+        self.on_switch_profile(proposed)
+        QMessageBox.information(self, "完了", f"プロファイル「{proposed}」を作成しました。")
+
+    def action_delete_profile_group(self):
+        if len(self.profiles) <= 1:
+            QMessageBox.warning(self, "エラー", "最後のプロファイルは削除できません。")
+            return
+            
+        reply = QMessageBox.question(self, "確認", f"プロファイル「{self.active_profile}」を削除してもよろしいですか？",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            old_name = self.active_profile
+            del self.profiles[old_name]
+            self.active_profile = list(self.profiles.keys())[0]
+            self.refresh_profile_list_ui()
+            # 強制切り替え
+            p = self.profiles[self.active_profile]
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = (p.get("kill_targets", []) + ["なし", "なし", "なし"])[:3]
+            self.auto_exit = p.get("auto_exit_after_completion", False)
+            
+            self.refresh_sidebar()
+            self.show_app_settings()
+
+    def save_to_profiles_cache(self):
+        """現在編集中の値を profiles ディクショナリに同期する"""
+        self.sync_current_profile_input()
+        
+        # App Settingsの値も読み取る
+        try:
+            self.launch_interval = int(self.interval_entry.text())
+        except (ValueError, AttributeError):
+            pass
+            
+        self.profiles[self.active_profile] = {
+            "games": self.games,
+            "launch_interval": self.launch_interval,
+            "kill_targets": self.kill_targets,
+            "auto_exit_after_completion": self.auto_exit
+        }
+
+    def refresh_profile_list_ui(self):
+        """プロファイル選択ドロップダウンのリストを更新する"""
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(list(self.profiles.keys()))
+        self.profile_combo.setCurrentText(self.active_profile)
+        self.profile_combo.blockSignals(False)
+
     def action_open_feedback(self):
         base_url = "https://github.com/aarubikarubi/DailyGameLauncher/issues/new"
         params = {
@@ -435,65 +639,129 @@ class ModernWindow(QMainWindow):
         url = f"{base_url}?{urllib.parse.urlencode(params)}"
         webbrowser.open(url)
 
+    @staticmethod
+    def make_help_icon(tooltip_text: str):
+        """モダンな「？」ヘルプアイコンQLアベルを生成して返す"""
+        icon = QLabel("?")
+        icon.setObjectName("HelpIcon")
+        icon.setToolTip(tooltip_text)
+        icon.setCursor(Qt.CursorShape.WhatsThisCursor)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        return icon
+
     def init_app_settings(self, container):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(15)
-        
-        # Interval
+
+        hi = self.make_help_icon  # shortcut
+
+        # ── 待機時間 ──
         int_layout = QHBoxLayout()
-        int_lbl = QLabel("次のゲームまでの待ち時間 (秒):")
-        int_lbl.setToolTip("PCのカクつきを防ぐための準備時間です。PCの性能が低い場合は長め(10秒など)に設定してください。")
+        int_lbl = QLabel("次のゲームを開くまでの待ち時間 (秒):")
         self.interval_entry = QLineEdit(str(self.launch_interval))
         self.interval_entry.setFixedWidth(80)
         int_layout.addWidget(int_lbl)
         int_layout.addWidget(self.interval_entry)
+        int_layout.addSpacing(6)
+        int_layout.addWidget(hi("PCのカクつきを防ぐための準備時間です。性能が低いPCの場合は長めに設定してください。"))
         int_layout.addStretch()
         layout.addLayout(int_layout)
-        
-        # Kill targets
-        kill_lbl = QLabel("一緒に閉じる裏方アプリ (ゲーム終了時に閉じます):")
-        kill_lbl.setToolTip("ランチャーやストアアプリなど、不要なバックグラウンドプロセスを自動でキルし、PCを軽くします。")
-        layout.addWidget(kill_lbl)
-        
+
+        # ── 裏方アプリ ──
+        kill_header = QHBoxLayout()
+        kill_header.addWidget(QLabel("一緒に閉じる裏方アプリ (ゲーム終了時):"))
+        kill_header.addSpacing(6)
+        kill_header.addWidget(hi("ゲーム終了時に、SteamやHoYoPlayなどの重いランチャーを自動で終了させてPCを軽くします。"))
+        kill_header.addStretch()
+        layout.addLayout(kill_header)
+
         kill_opts = ["なし", "HoYoPlay (hoyoplay.exe)", "Steam (steam.exe)", "Epic Games (EpicGamesLauncher.exe)"]
         self.kill_combo_1 = QComboBox(); self.kill_combo_1.addItems(kill_opts); self.kill_combo_1.setCurrentText(self.kill_targets[0])
         self.kill_combo_2 = QComboBox(); self.kill_combo_2.addItems(kill_opts); self.kill_combo_2.setCurrentText(self.kill_targets[1])
         self.kill_combo_3 = QComboBox(); self.kill_combo_3.addItems(kill_opts); self.kill_combo_3.setCurrentText(self.kill_targets[2])
-        
         layout.addWidget(self.kill_combo_1)
         layout.addWidget(self.kill_combo_2)
         layout.addWidget(self.kill_combo_3)
         layout.addSpacing(10)
-        
-        # Toggles
-        start_layout = QHBoxLayout()
+
+        # ── トグルの共通ヘルパー ──
+        def make_toggle_row(toggle_widget, label_text, help_text):
+            row = QHBoxLayout()
+            row.addWidget(toggle_widget)
+            row.addSpacing(8)
+            row.addWidget(QLabel(label_text))
+            row.addSpacing(6)
+            row.addWidget(hi(help_text))
+            row.addStretch()
+            return row
+
         self.startup_toggle = ToggleSwitch(is_checked=self.run_on_startup)
-        start_lbl = QLabel("PC起動時に自動で開始する")
-        start_lbl.setToolTip("Windows起動時に、タスクトレイに常駐するようになります。")
-        start_layout.addWidget(self.startup_toggle)
-        start_layout.addWidget(start_lbl)
-        start_layout.addStretch()
-        layout.addLayout(start_layout)
-        
-        auto_layout = QHBoxLayout()
+        layout.addLayout(make_toggle_row(
+            self.startup_toggle,
+            "PC起動時に自動で開始する",
+            "Windows起動時に、タスクトレイに常駐するようになります。"
+        ))
+
         self.auto_exit_toggle = ToggleSwitch(is_checked=self.auto_exit)
-        auto_lbl = QLabel("日課完了後にこのツールを自動終了する")
-        auto_lbl.setToolTip("登録した全てのゲームを通しでプレイし終わった後、このランチャーも自ら終了します。")
-        auto_layout.addWidget(self.auto_exit_toggle)
-        auto_layout.addWidget(auto_lbl)
-        auto_layout.addStretch()
-        layout.addLayout(auto_layout)
+        layout.addLayout(make_toggle_row(
+            self.auto_exit_toggle,
+            "日課完了後にこのツールを自動終了する",
+            "登録した全てのゲームを通しでプレイし終わった後、このランチャーも自ら終了します。"
+        ))
+
+        self.show_on_startup_toggle = ToggleSwitch(is_checked=self.show_on_startup)
+        layout.addLayout(make_toggle_row(
+            self.show_on_startup_toggle,
+            "アプリ起動時にこのウィンドウを表示する",
+            "ONにすると起動時にこの画面が開くので、初めての方でも安心です。慣れてきたらOFFにするとバックグラウンドで静かに待機します。"
+        ))
+
+        # ── スマート待機 ──
+        layout.addSpacing(10)
+        line = QFrame(); line.setFrameShape(QFrame.Shape.HLine); line.setStyleSheet("border: 0.5px solid #e5e5ea;"); layout.addWidget(line)
+        layout.addSpacing(10)
         
+        sw_title = QHBoxLayout()
+        sw_title.addWidget(QLabel("🌊 スマート待機 (CPU負荷検知)"))
+        sw_title.addWidget(hi("次のゲームを起動する前に、PCの負荷（CPU使用率）が下がるのを自動で待ちます。起動時のカクつきを最小限に抑えます。"))
+        sw_title.addStretch()
+        layout.addLayout(sw_title)
+        
+        self.sw_toggle = ToggleSwitch(is_checked=self.smart_wait_enabled)
+        layout.addLayout(make_toggle_row(
+            self.sw_toggle,
+            "スマート待機を有効にする",
+            "ONにすると、CPU使用率が指定以下になるまでゲームの起動を遅らせます。"
+        ))
+        
+        sw_params = QHBoxLayout()
+        sw_levels_lbl = QLabel("CPU負荷が ")
+        self.cpu_entry = QLineEdit(str(self.cpu_threshold))
+        self.cpu_entry.setFixedWidth(50)
+        sw_levels_lbl2 = QLabel(" % 以下になるまで待つ (最大 ")
+        self.sw_timeout_entry = QLineEdit(str(self.smart_wait_timeout))
+        self.sw_timeout_entry.setFixedWidth(50)
+        sw_levels_lbl3 = QLabel(" 秒)")
+        
+        sw_params.addWidget(sw_levels_lbl)
+        sw_params.addWidget(self.cpu_entry)
+        sw_params.addWidget(sw_levels_lbl2)
+        sw_params.addWidget(self.sw_timeout_entry)
+        sw_params.addWidget(sw_levels_lbl3)
+        sw_params.addStretch()
+        layout.addLayout(sw_params)
+
         layout.addStretch()
-        
-        # Action Buttons
+
+        # ── アクションボタン ──
         start_routine_btn = QPushButton("▶ 日課を開始 (1番目のゲームを起動)")
         start_routine_btn.setObjectName("PrimaryButton")
         start_routine_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        start_routine_btn.setToolTip("登録したリストの順番にゲームを自動起動します。")
         start_routine_btn.clicked.connect(self.action_start_routine)
         layout.addWidget(start_routine_btn)
-        
+
         reset_btn = QPushButton("❌ すべてのゲームをリセット")
         reset_btn.setObjectName("DangerButton")
         reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -504,6 +772,8 @@ class ModernWindow(QMainWindow):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(15)
+        
+        hi = self.make_help_icon  # shortcut
         
         # Step Label
         self.step_label = QLabel("No. 1")
@@ -550,6 +820,8 @@ class ModernWindow(QMainWindow):
         path_input_lyt.addWidget(self.prof_path_entry)
         path_input_lyt.addWidget(browse_btn)
         path_input_lyt.addWidget(detect_btn)
+        path_input_lyt.addSpacing(6)
+        path_input_lyt.addWidget(hi("ゲームがインストールされている場所をPC内から自動で探して入力します。手動で探す手間が省けます！"))
         path_layout.addWidget(path_lbl)
         path_layout.addLayout(path_input_lyt)
         layout.addLayout(path_layout)
@@ -833,6 +1105,95 @@ class ModernWindow(QMainWindow):
             self.refresh_sidebar()
             self.show_app_settings()
             self.save_config()
+
+    def on_switch_profile(self, profile_name):
+        if profile_name == self.active_profile:
+            return
+            
+        # 今のプロファイルの内容を退避
+        self.save_to_profiles_cache()
+        
+        # 切り替え
+        p = self.profiles.get(profile_name)
+        if p:
+            self.active_profile = profile_name
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = (p.get("kill_targets", []) + ["なし", "なし", "なし"])[:3]
+            self.auto_exit = p.get("auto_exit_after_completion", False)
+            
+            # UIの更新
+            self.refresh_sidebar()
+            self.show_app_settings()
+            print(f"Switched profile to: {profile_name}")
+
+    def action_add_profile_group(self):
+        text, ok = QInputDialog.getText(self, "新規リスト作成", "リスト名を入力してください:")
+        if ok and text:
+            proposed = text.strip()
+            if proposed in self.profiles:
+                QMessageBox.warning(self, "エラー", "同名のリストが既に存在します。")
+                return
+            
+            self.save_to_profiles_cache()
+            self.profiles[proposed] = {
+                "games": [],
+                "launch_interval": 5,
+                "kill_targets": ["なし", "なし", "なし"],
+                "auto_exit_after_completion": False
+            }
+            self.active_profile = proposed
+            self.refresh_profile_list_ui()
+            self.on_switch_profile(proposed)
+            QMessageBox.information(self, "完了", f"プロファイル「{proposed}」を作成しました。")
+
+    def action_delete_profile_group(self):
+        if len(self.profiles) <= 1:
+            QMessageBox.warning(self, "エラー", "最後のプロファイルは削除できません。")
+            return
+            
+        reply = QMessageBox.question(self, "確認", f"プロファイル「{self.active_profile}」を削除してもよろしいですか？",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            old_name = self.active_profile
+            del self.profiles[old_name]
+            self.active_profile = list(self.profiles.keys())[0]
+            self.refresh_profile_list_ui()
+            # 強制切り替え
+            p = self.profiles[self.active_profile]
+            self.games = p.get("games", [])
+            self.launch_interval = p.get("launch_interval", 5)
+            self.kill_targets = (p.get("kill_targets", []) + ["なし", "なし", "なし"])[:3]
+            self.auto_exit = p.get("auto_exit_after_completion", False)
+            
+            self.refresh_sidebar()
+            self.show_app_settings()
+
+    def save_to_profiles_cache(self):
+        """現在編集中の値を profiles ディクショナリに同期する"""
+        self.sync_current_profile_input()
+        
+        # App Settingsの値も読み取る
+        try:
+            self.launch_interval = int(self.interval_entry.text())
+        except (ValueError, AttributeError):
+            pass
+            
+        self.profiles[self.active_profile] = {
+            "games": self.games,
+            "launch_interval": self.launch_interval,
+            "kill_targets": self.kill_targets,
+            "auto_exit_after_completion": self.auto_exit
+        }
+
+    def refresh_profile_list_ui(self):
+        """プロファイル選択ドロップダウンのリストを更新する"""
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(list(self.profiles.keys()))
+        self.profile_combo.setCurrentText(self.active_profile)
+        self.profile_combo.blockSignals(False)
 
     def launch_current(self):
         if self.current_selected_index is not None and self.monitor:
